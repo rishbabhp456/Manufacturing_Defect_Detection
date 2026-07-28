@@ -1,6 +1,6 @@
-# 🩺 MedDiag - Clinical AI Diagnosis Portal
+# ⚙️ Automated Manufacturing Defect Detection System
 
-This project implements a Transfer Learning model (MobileNetV2) for classifying Chest X-rays (Normal vs. Pneumonia). The model is deployed as a full-stack web application using Flask, featuring JWT authentication, a modern clinical dashboard, and automated PDF report generation. It leverages PyMongo for patient history management and is structured for production deployment on cloud platforms like Azure.
+This project implements a custom Convolutional Neural Network (CNN) for detecting manufacturing defects in casting products (Good vs. Defective). The model is deployed as a full-stack web application using Flask, featuring JWT authentication, a modern Quality Control (QC) dashboard, live factory analytics, and automated PDF report generation. It leverages PyMongo for inspection history management and is structured for production deployment on cloud platforms like Azure.
 
 ## Table of Contents
 - [Features](#features)
@@ -8,28 +8,26 @@ This project implements a Transfer Learning model (MobileNetV2) for classifying 
 - [Local Setup](#local-setup)
 - [Project Structure](#project-structure)
 - [Azure Deployment Guide](#azure-deployment-guide)
-- [Usage Examples (API & UI)](#usage-examples-api--ui)
-- [Requirements](#requirements)
 
 ## Features
-- **Medical Image Classification**: Utilizes a fine-tuned MobileNetV2 model to perform binary classification on Chest X-rays (Normal vs. Pneumonia).
-- **Automated PDF Reports**: Dynamically generates downloadable clinical PDF reports for both new diagnoses and historical patient records without permanently storing heavy image files.
-- **Secure Authentication**: Provides doctor/user registration and login endpoints secured via JSON Web Tokens (JWT).
-- **Web API & Dashboard**: A Flask backend serves the RESTful APIs, connected to a dynamic frontend featuring chronological patient history and diagnostic suggestions.
-- **Database Integration**: Interacts with MongoDB to persistently store user credentials and patient prediction histories (Name, Age, Diagnosis, Date).
+- **Quality Inspection AI**: Utilizes a custom CNN model to perform binary classification on industrial casting product images (Good Product vs. Defective Product).
+- **QC Dashboard & Analytics**: A Flask backend serves the RESTful APIs, connected to a dynamic frontend featuring chronological inspection history, live defect rate analytics, and automated system routing actions (Pass/Reject).
+- **Automated PDF Reports**: Dynamically generates downloadable QC inspection PDF reports for both new scans and historical batch records without permanently storing heavy image files.
+- **Secure Authentication**: Provides factory operator registration and login endpoints secured via JSON Web Tokens (JWT).
+- **Database Integration**: Interacts with MongoDB to persistently store user credentials and inspection records (Operator Name, Product Batch ID, Prediction, Confidence, Date).
 
 ## Project Flow
-1. **Model Training**: MobileNetV2 is fine-tuned for feature extraction on chest X-rays. The trained model (`.keras`) is saved as an artifact.
-2. **Authentication**: Users log in, receiving a JWT access token stored in `localStorage`.
-3. **Inference & Reporting**: The `/predict_image` endpoint accepts an image and patient metadata, verifies the JWT, and classifies the scan. The `/generate_report` endpoint packages this into a downloadable PDF.
-4. **Data Logging**: Results are permanently logged in MongoDB. Temporary images and PDFs in the `data/` folder are overwritten or cleaned up to save server storage.
-5. **History Retrieval**: The dashboard fetches past predictions and can generate image-free historical PDF summaries on demand.
+1. **Model Training**: A CNN architecture is trained from scratch on casting product images with data augmentation. The trained model (`.keras`) and class index mapping (`.json`) are saved as artifacts.
+2. **Authentication**: Operators log in, receiving a JWT access token stored in `localStorage`.
+3. **Inference & Reporting**: The `/predict_image` endpoint accepts an image and product metadata, verifies the JWT, and classifies the unit. The `/generate_report` endpoint packages this into a downloadable PDF.
+4. **Analytics & Logging**: Results are permanently logged in MongoDB. The `/analytics` endpoint provides real-time metrics for total inspected, good, defective, and overall defect rate. Temporary images in the `data/` folder are cleaned up to save server storage.
+5. **History Retrieval**: The dashboard fetches past inspections and can generate image-free historical PDF summaries on demand.
 
 ## Local Setup
 1. **Clone and enter repository**:
     ```bash
-    git clone [https://github.com/your-username/MedDiag_Portal.git](https://github.com/your-username/MedDiag_Portal.git)
-    cd MedDiag_Portal
+    git clone [https://github.com/your-username/Manufacturing_Defect_Detection.git](https://github.com/your-username/Manufacturing_Defect_Detection.git)
+    cd Manufacturing_Defect_Detection
     ```
 2. **Create and activate virtual environment**:
     ```bash
@@ -40,11 +38,11 @@ This project implements a Transfer Learning model (MobileNetV2) for classifying 
     ```bash
     pip install -r requirements.txt
     ```
-4. **Prepare artifacts**: Place your trained model (`MedDiag_MobileNetV2.keras`) in the `artifacts/` directory. 
-5. **Environment Variables**: Configure your `.env` or export directly:
+4. **Prepare artifacts**: Place your trained model (`Manufacturing_Defect_Detection.keras`) and mapping file (`Detection_Class_names.json`) in the `artifacts/` directory. 
+5. **Environment Variables**: Configure your `.env` or `config.py` directly:
     ```bash
     export FLASK_APP=main.py
-    export MONGODB_URI="mongodb://localhost:27017/meddiag_db"
+    export MONGODB_URI="mongodb://localhost:27017/image_clf"
     export JWT_SECRET_KEY="your_super_secret_key"
     ```
 6. **Run Application**:
@@ -55,21 +53,24 @@ This project implements a Transfer Learning model (MobileNetV2) for classifying 
 
 ## Project Structure
 ```text
-MedDiag_Portal/
+Manufacturing_Defect_Detection/
 ├── .venv/                            
 ├── artifacts/                        
-│   └── MedDiag_MobileNetV2.keras     # Fine-tuned transfer learning model
-├── data/                             # Temporary storage for uploads and generated PDFs
+│   ├── Detection_Class_names.json    # JSON mapping of class indices (0: Defective, 1: Good)
+│   └── Manufacturing_Defect_Detection.keras # Trained custom CNN model
+├── data/                             # Temporary storage for uploads and generated QC PDFs
 ├── src/
-│   └── utils.py                      # Preprocessing and thresholding logic (sigmoid)
+│   └── utils.py                      # Preprocessing and binary thresholding logic
 ├── static/
-│   └── style.css                     
+│   └── style.css                     # Industrial UI styling
 ├── templates/
 │   ├── login.html                    
-│   └── dashboard.html                # Clinical interface with PDF download triggers
+│   ├── register.html                 
+│   ├── forget_password.html          
+│   └── dashboard.html                # Factory QC interface with analytics & PDF downloads
 ├── config.py                         
-├── main.py                           # Flask app, APIs, and PDF generation routes (fpdf)
-└── requirements.txt
+├── main.py                           # Flask app, APIs, Analytics, and PDF generation (fpdf)
+└── requirements.txt                  # Python dependencies
 
 Azure Deployment Guide
 
