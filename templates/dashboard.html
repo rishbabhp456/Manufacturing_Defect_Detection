@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QC Dashboard - Defect Detection</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .dashboard-container { max-width: 1400px; margin: auto; }
+        .history-panel { background-color: #f8f9fa; border-right: 2px solid #e9ecef; height: calc(100vh - 180px); overflow-y: auto; border-radius: 15px; }
+        .main-panel { padding: 2rem; }
+        .scan-preview-box { border: 2px dashed #546e7a; border-radius: 15px; padding: 20px; text-align: center; background-color: #fcfcfc; min-height: 250px; display: flex; align-items: center; justify-content: center; }
+        #imagePreview { max-height: 300px; object-fit: contain; }
+        .stat-card { border-radius: 12px; background: white; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-dark shadow-sm" style="background-color: #263238;">
+    <div class="container-fluid px-4">
+        <a class="navbar-brand fw-bold" href="#">⚙️ Factory QC Portal</a>
+        <div class="d-flex align-items-center">
+            <span class="text-light me-3">Operator: <span id="displayUsername" class="fw-bold"></span></span>
+            <a href="#" id="logoutBtn" class="btn btn-outline-light btn-sm">Sign Out</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid dashboard-container mt-3">
+    <!-- Analytics Row -->
+    <div class="row mb-3">
+        <div class="col-md-3"><div class="stat-card"><h6 class="text-muted text-uppercase mb-1">Total Inspected</h6><h3 id="statTotal" class="mb-0 text-dark">0</h3></div></div>
+        <div class="col-md-3"><div class="stat-card"><h6 class="text-muted text-uppercase mb-1">Good Products</h6><h3 id="statGood" class="mb-0 text-success">0</h3></div></div>
+        <div class="col-md-3"><div class="stat-card"><h6 class="text-muted text-uppercase mb-1">Defective Products</h6><h3 id="statDefect" class="mb-0 text-danger">0</h3></div></div>
+        <div class="col-md-3"><div class="stat-card"><h6 class="text-muted text-uppercase mb-1">Defect Rate</h6><h3 id="statRate" class="mb-0 text-warning">0%</h3></div></div>
+    </div>
+
+    <div class="row">
+        <!-- Left Sidebar: Inspection History -->
+        <div class="col-lg-4 col-md-5 mb-4">
+            <div class="card shadow-sm history-panel p-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="text-dark mb-0 fw-bold">Inspection History</h5>
+                    <button class="btn btn-sm btn-outline-dark" onclick="loadHistory(); loadAnalytics();">Refresh</button>
+                </div>
+                <div class="list-group" id="historyList">
+                    <div class="text-center text-muted mt-4">Loading inspection history...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Main Area: Upload & Analysis -->
+        <div class="col-lg-8 col-md-7 main-panel bg-white shadow-sm rounded-4">
+            <h3 class="text-dark mb-4 border-bottom pb-2 fw-bold">New Quality Inspection</h3>
+            
+            <form id="uploadForm">
+                <input type="hidden" name="username" value="" id="currentUsername"> 
+                
+                <div class="mb-4">
+                    <label class="form-label text-muted fw-bold">Product Batch ID</label>
+                    <input type="text" class="form-control" name="product_id" placeholder="e.g., BATCH-492-X" required>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label text-muted fw-bold">Upload Casting Product Image</label>
+                    <input class="form-control form-control-lg" type="file" id="imageInput" name="image" accept="image/*" required onchange="previewImage(event)">
+                </div>
+                
+                <div class="scan-preview-box mb-4">
+                    <span id="placeholderText" class="text-muted">Product image preview will appear here</span>
+                    <img id="imagePreview" src="" alt="Product Preview">
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-lg w-100 shadow-sm" id="predictBtn">Run AI Inspection</button>
+            </form>
+
+            <div id="resultBox" class="alert mt-4 d-none shadow-sm">
+                <h4 class="alert-heading text-dark">Inspection Complete</h4>
+                <hr>
+                <p class="mb-1 fs-5 text-dark"><strong>AI Classification:</strong> <span id="predictionText" class="text-uppercase fw-bold"></span></p>
+                <p class="mb-1 text-dark"><strong>Confidence:</strong> <span id="confidenceText" class="fw-bold"></span>%</p>
+                <p class="mb-0 text-dark"><strong>System Action:</strong> <span id="suggestionText"></span></p>
+                <button id="downloadReportBtn" class="btn btn-dark mt-3 w-100 shadow-sm">📄 Download QC PDF Report</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        let storedUsername = localStorage.getItem('username');
+        if (!storedUsername) {
+            window.location.href = '/login_page'; 
+        } else {
+            document.getElementById('currentUsername').value = storedUsername;
+            document.getElementById('displayUsername').innerText = storedUsername;
+            loadHistory();
+            loadAnalytics();
+        }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', async function(e) {
+        e.preventDefault();
+        localStorage.clear();
+        await fetch('/logout', { method: 'POST' });
+        window.location.href = '/login_page';
+    });
+
+    function previewImage(event) {
+        const reader = new FileReader();
+        reader.onload = function(){
+            const img = document.getElementById('imagePreview');
+            const placeholder = document.getElementById('placeholderText');
+            img.src = reader.result;
+            img.style.display = 'block';
+            placeholder.style.display = 'none';
+        };
+        reader.readAsDataURL(event.target.files[0]);
+    }
+
+    // --- Fetch Analytics Data ---
+    async function loadAnalytics() {
+        let username = document.getElementById('currentUsername').value;
+        try {
+            let response = await fetch(`/analytics?username=${username}`, {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+            });
+            let result = await response.json();
+            if (result.status === 'success') {
+                document.getElementById('statTotal').innerText = result.total_inspected;
+                document.getElementById('statGood').innerText = result.total_good;
+                document.getElementById('statDefect').innerText = result.total_defective;
+                document.getElementById('statRate').innerText = result.defect_percentage + '%';
+            }
+        } catch (error) {
+            console.log("Failed to load analytics");
+        }
+    }
+
+    // --- Main Prediction Submit ---
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault(); 
+        let formData = new FormData(this);
+        let btn = document.getElementById('predictBtn');
+        btn.innerText = 'Analyzing Product...';
+        btn.disabled = true;
+        
+        try {
+            let response = await fetch('/predict_image', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
+                body: formData
+            });
+            let result = await response.json();
+            
+            if(result.status === 'success') {
+                let resultBox = document.getElementById('resultBox');
+                resultBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+                
+                let diagnosis = result.predicted_class_name;
+                document.getElementById('predictionText').innerText = diagnosis;
+                document.getElementById('confidenceText').innerText = parseFloat(result.confidence).toFixed(2);
+                
+                let suggestion = "";
+                if (diagnosis.toUpperCase().includes("DEFECTIVE")) {
+                    resultBox.classList.add('alert-danger');
+                    document.getElementById('predictionText').classList.add('text-danger');
+                    document.getElementById('predictionText').classList.remove('text-success');
+                    suggestion = "REJECT: Route to scrap or manual rework.";
+                } else {
+                    resultBox.classList.add('alert-success');
+                    document.getElementById('predictionText').classList.add('text-success');
+                    document.getElementById('predictionText').classList.remove('text-danger');
+                    suggestion = "PASS: Approved for next assembly stage.";
+                }
+                document.getElementById('suggestionText').innerText = suggestion;
+                
+                loadHistory(); 
+                loadAnalytics();
+            } else {
+                alert("Error: " + result.message);
+            }
+        } catch (error) {
+            alert("API connection failed!");
+        }
+        btn.innerText = 'Run AI Inspection';
+        btn.disabled = false;
+    });
+
+    // --- Download Current Report ---
+    document.getElementById('downloadReportBtn').addEventListener('click', async function() {
+        let btn = this;
+        btn.innerText = "Generating PDF...";
+        btn.disabled = true;
+
+        let payload = {
+            operator_name: document.getElementById('currentUsername').value,
+            product_id: document.querySelector('input[name="product_id"]').value,
+            prediction: document.getElementById('predictionText').innerText,
+            confidence: document.getElementById('confidenceText').innerText,
+            image: document.getElementById('imagePreview').src 
+        };
+
+        try {
+            let response = await fetch('/generate_report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            let blob = await response.blob();
+            let link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = `${payload.product_id}_QC_Report.pdf`;
+            link.click();
+        } catch (error) {
+            alert("Failed to generate report.");
+        }
+        btn.innerText = "📄 Download QC PDF Report";
+        btn.disabled = false;
+    });
+
+    // --- Load History ---
+    async function loadHistory() {
+        let username = document.getElementById('currentUsername').value;
+        let list = document.getElementById('historyList');
+        try {
+            let response = await fetch(`/saved_data?username=${username}`, {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') }
+            });
+            let result = await response.json();
+
+            if (result.status === 'success' && result.history.length > 0) {
+                list.innerHTML = "";
+                let reversedHistory = result.history.reverse();
+                
+                reversedHistory.forEach(item => {
+                    let colorClass = item.prediction.toUpperCase().includes("DEFECTIVE") ? "text-danger" : "text-success";
+                    list.innerHTML += `
+                    <div class="list-group-item list-group-item-action flex-column align-items-start mb-2 border rounded shadow-sm">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1 fw-bold text-dark">${item.product_id}</h6>
+                            <small class="text-muted border rounded px-1">${parseFloat(item.confidence).toFixed(1)}%</small>
+                        </div>
+                        <p class="mb-1 ${colorClass} fw-semibold">${item.prediction}</p>
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <small class="text-muted">${item.date}</small>
+                            <button class="btn btn-sm btn-outline-dark" onclick="downloadHistoryReport('${item.product_id}', '${item.prediction}', '${item.confidence}', '${item.date}')">📄 PDF</button>
+                        </div>
+                    </div>`;
+                });
+            } else {
+                list.innerHTML = `<div class="text-center text-muted mt-4">No inspection records found.</div>`;
+            }
+        } catch (error) {
+            list.innerHTML = `<div class="text-center text-danger mt-4">Failed to load records.</div>`;
+        }
+    }
+
+    // --- Download History Report ---
+    async function downloadHistoryReport(productId, prediction, confidence, date) {
+        let payload = {
+            operator_name: document.getElementById('currentUsername').value,
+            product_id: productId,
+            prediction: prediction,
+            confidence: confidence,
+            date: date
+        };
+
+        try {
+            let response = await fetch('/generate_history_report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            let blob = await response.blob();
+            let link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = `${productId}_History_Report.pdf`;
+            link.click();
+        } catch (error) {
+            alert("Failed to generate historical report.");
+        }
+    }
+</script>
+</body>
+</html>
